@@ -6,5 +6,5 @@
 - 🔥 ALS system that auto adjust to your vehicle's model and handling
 - 💻 Excellent performance with only 0.67/0.8 5s CPU usage
 
-### Features
+### Features:
 - Turbo, ALS, Blowoff Valve, Revving
