@@ -31,10 +31,10 @@ config = {
 		},
 
 		customGearRatio = { -- hardcoded attempt to fix the engine revving too much with lower gears
-			[1] = 4.0,
-			[2] = 2.8,
-			[3] = 1.8,
-			[4] = 1.25,
+			[1] = 0.2,
+			[2] = 0.4,
+			[3] = 0.6,
+			[4] = 0.8,
 			[5] = 1.0
 		},
 
