@@ -1,0 +1,17 @@
+<meta>
+    <info name="fast-engines" author="thealex-br" type="script" />
+    
+    <script src="config.lua" type="client" />
+    <script src="engine.lua" type="client" />
+    <script src="extras.lua" type="client" />
+    <script src="common.lua" type="client" />
+    
+    <file src="audio/extras/turbo.wav" />
+    <file src="audio/extras/turbo_shift1.wav" />
+    <file src="audio/extras/turbo_shift2.wav" />
+    <file src="audio/extras/als1.ogg" />
+    <file src="audio/extras/als2.ogg" />
+    <file src="audio/extras/als3.ogg" />
+    
+    <file src="audio/*.ogg" />
+</meta>
