@@ -1,105 +1,167 @@
 vehicles = {}
 
-local function smoothRPM(vehicle, rpm, min, max, smoother)
-	local currentRPM = getData(vehicle, "enginerpm") or 0
-	local smoothValues = smoother or config.engine.smoother
-	local nRPM = currentRPM + (currentRPM < rpm and smoothValues[1] or smoothValues[2])
-	currentRPM = currentRPM < rpm and math.min(nRPM, rpm) or math.max(nRPM, rpm)
-	return setData(vehicle, "enginerpm", math.clamp(currentRPM, min, max))
+local function clampAndSmooth(vehicle, rpm, min, max, tbl)
+	local lastRPM = getData(vehicle, "enginerpm") or rpm
+
+	local smooth = tbl or config.engine.smoother
+	local newRPM
+	if lastRPM < rpm then
+		newRPM = lastRPM + smooth[1]
+	else
+		newRPM = lastRPM + smooth[2]
+	end
+
+	if lastRPM < rpm then
+		lastRPM = math.min(newRPM, rpm)
+	else
+		lastRPM = math.max(newRPM, rpm)
+	end
+
+	return setData(vehicle, "enginerpm", math.clamp(lastRPM, min, max))
 end
 
 local exception = {
 	[17] = true,
 	[19] = true,
 	[6] = true,
-	[5] = true
+	[5] = true,
+
+	[11] = {
+		[2] = true,
+	},
+	[15] = {
+		[2] = true,
+	},
+	[40] = {
+		[3] = true,
+	},
 }
 
-addEventHandler("onClientWorldSound", root, function(group)
-	if not exception[group] and info[config.getVehicleModel(source)] then
-		cancelEvent()
+local blacklist = {
+	[539] = true,
+	Plane = true,
+	Helicopter = true,
+	Boat = true,
+	Train = true,
+	Trailer = true,
+	BMX = true,
+}
+
+addEventHandler("onClientWorldSound", root, function(group, index)
+	if getElementType(source) ~= "vehicle" or wasEventCancelled() then
+		return
+	end
+	if type(exception[group]) == "table" and exception[group][index] then
+		return
+	end
+	if type(exception[group]) ~= "table" and exception[group] then
+		return
+	end
+	if blacklist[config.getVehicleModel(source)] or blacklist[getVehicleType(source)] then
+		return
+	end
+	if vehicles[source] or info[config.getVehicleModel(source)] then
+		return cancelEvent()
 	end
 end)
 
-function doEngineSound()
-	for vehicle in pairs(vehicles) do
-		calculateEngine(vehicle)
-	end
-end
-
 function calculateEngine(vehicle)
-	local driver = getVehicleController(vehicle)
-	if not driver then
-		return false
-	end
-
 	local info = info[config.getVehicleModel(vehicle)]
-	if not info then
-		return false
-	end
-
+	info.ratio = info.ratio or 0.5
 
 	local engine = getData(vehicle, "engine")
 	if not isElement(engine) then
-		engine = info.isDefault and playSFX3D("genrl", info.audio, 0, 0, 0, 0, true) or playSound3D(info.audio, 0, 0, 0, true)
+		engine = info.isDefault and playSFX3D("genrl", info.audio, 0, 0, 0, 0, true)
+			or playSound3D(info.audio, 0, 0, 0, true)
 		setData(vehicle, "engine", engine)
-
-		local enginePos = select(2, getVehicleDummyPosition(vehicle, "engine"))
 
 		setElementDimension(engine, getElementDimension(vehicle))
 		setElementInterior(engine, getElementInterior(vehicle))
-		attachElements(engine, vehicle, 0, enginePos, 0)
-
+		attachElements(engine, vehicle, getVehicleDummyPosition(vehicle, "engine"))
 		setSoundSpeed(engine, 0.01)
 		setSoundVolume(engine, config.engine.volume)
 		setSoundMaxDistance(engine, config.engine.distance)
-
-		if not hasElementData(vehicle, config.tunningKey) then
-			setElementData(vehicle, config.tunningKey, {als=info.als, turbo=info.turbo, blowoff=info.blowoff})
-		end
 	end
 
-	local accel, brake, handbrake = getPedAnalogControlState(driver, "accelerate"), getPedAnalogControlState(driver, "brake_reverse"), getPedControlState(driver, "handbrake")
-	
+	local idle = getData(vehicle, "idle")
+	if info.idle and not isElement(idle) then
+		idle = info.isDefault and playSFX3D("genrl", info.idle, 1, 0, 0, 0, true)
+			or playSound3D(info.idle, 0, 0, 0, true)
+		setData(vehicle, "idle", idle)
+
+		setElementDimension(idle, getElementDimension(vehicle))
+		setElementInterior(idle, getElementInterior(vehicle))
+		attachElements(idle, vehicle, getVehicleDummyPosition(vehicle, "engine"))
+		setSoundSpeed(idle, info.isDefault and 0.85 or 1)
+		setSoundVolume(idle, config.engine.volume)
+		setSoundMaxDistance(idle, 0.4 * config.engine.distance)
+	end
+
+	local driver = getVehicleController(vehicle)
+	local accel = driver and getPedAnalogControlState(driver, "accelerate") or 0
+	local brake = driver and getPedAnalogControlState(driver, "brake_reverse") or 0
+	local handbrake = driver and getPedControlState(driver, "handbrake") or false
+
 	local x, y, z = getElementVelocity(vehicle)
 	local velocity = (x * x + y * y + z * z)
-	
-	local maxGears = getVehicleHandling(vehicle).numberOfGears
-	local gear = getVehicleCurrentGear(vehicle)
-	local gearRatio = gear
-	
-	local ratio = (info.gearRatio and info.gearRatio[gearRatio]) or (config.engine.ratio and config.engine.ratio[gearRatio]) or 1
-	
-	if gear == 0 then
-		gearRatio = config.engine.ratio[0]
+
+	local realVelocity = velocity ^ 0.5 * 180
+	local realGear = getVehicleCurrentGear(vehicle)
+	local maxGears = getVehicleHandling(vehicle, "numberOfGears")
+
+	local _gearRatio = info.ratio
+	local fakeGear = realGear
+	if getVehicleHandling(vehicle, "engineType") == "electric" and config.oneGearEVs then
+		fakeGear = 5
+		_gearRatio = 0.2
 	end
-	
+
+	local ratio = (info.gearRatio and info.gearRatio[fakeGear])
+		or (config.engine.ratio and config.engine.ratio[fakeGear])
+		or 1
+
+	local gearRatio = fakeGear
+	if realGear == 0 then
+		fakeGear = config.engine.ratio[0]
+	end
+
 	local state = getVehicleEngineState(vehicle)
 	local speed = 0
-
 	if state then
-		local isSliding = isTractionState(vehicle, 1, 1)
-
-		if ((velocity ^ 0.5 * 180) <= 12 and gear == 1) and (isSliding or handbrake or not isVehicleWheelsOnGround(vehicle)) then
+		local isSliding = (driver and getPedControlState(driver, "accelerate")) and isVehicleSliding(vehicle)
+		if
+			(realVelocity <= 12 and realGear == 1) and (isSliding or handbrake or not isVehicleReallyOnGround(vehicle))
+		then
 			speed = accel * info.accel
 		else
-			local driftAngle = isSliding and accel * getDrift(vehicle) or 0 -- raw drift
-			local driftRatio = isSliding and driftAngle / gearRatio or 0 	-- less agressive
-			local accelRatio = velocity ^ (info.ratio or 0.5) * (isSliding and config.engine.launchRatio[gear] or 1)
+			local newAccel = math.lerp(
+				math.lerp(info.decel, info.accel, accel),
+				info.slide,
+				isSliding and accel * getDrift(vehicle) or 0
+			)
+			speed = newAccel * ratio * velocity ^ _gearRatio * (isSliding and config.engine.launchRatio[fakeGear] or 1)
+		end
+		speed = speed / fakeGear / getVehicleMaxVelocity(vehicle) * config.engine.fixRatio[maxGears]
+	end
 
-			speed = math.lerp(info.decel, info.accel, accel) * (ratio - driftRatio) * accelRatio + (driftAngle * info.slide)
+	local rpm = clampAndSmooth(vehicle, speed, state and info.min or 0.01, info.max, info.smoother)
+	local relativeRPM = math.scale(rpm, info.min, info.max)
+
+	if idle then
+		if state then
+			local idleVol = 0.7 * config.engine.volume * (1 - math.min(velocity * 100, 1)) * (1 - relativeRPM)
+			setSoundVolume(idle, idleVol)
+		else
+			setSoundVolume(idle, 0)
 		end
 	end
 
-	speed = speed / gearRatio / getVehicleMaxVelocity(vehicle) * config.engine.customGearRatio[maxGears]
-
-	local rpm = smoothRPM(vehicle, speed, state and info.min or 0.01, info.max, info.smoother)
-	local vol = math.lerp(0.7 * config.engine.volume, config.engine.volume, accel)
-
 	setSoundSpeed(engine, (info.mult or 1) * (info.isDefault and 1.5 or 1) * rpm)
+
+	local vol = math.lerp(0.7 * config.engine.volume, config.engine.volume, accel)
 	setSoundVolume(engine, vol)
 
-	doExtras(vehicle, rpm, accel, brake)
-	revEffect(vehicle, rpm, info, vol, (velocity ^ 0.5 * 180))
-	setElementData(vehicle, config.rpmKey, math.scale(rpm, info.min, info.max), false)
+	doExtras(vehicle, accel, brake)
+	revEffect(vehicle, info, vol, realVelocity)
+	setElementData(vehicle, config.rpmKey, relativeRPM, false)
 end
