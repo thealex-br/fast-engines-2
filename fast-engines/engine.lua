@@ -130,7 +130,7 @@ function calculateEngine(vehicle)
 	if state then
 		local isSliding = (driver and getPedControlState(driver, "accelerate")) and isVehicleSliding(vehicle)
 		if
-			(realVelocity <= 12 and realGear == 1) and (isSliding or handbrake or not isVehicleReallyOnGround(vehicle))
+			(velocity <= 0.01 and realGear == 1) and (isSliding or handbrake or not isVehicleReallyOnGround(vehicle))
 		then
 			speed = accel * info.accel
 		else
@@ -139,6 +139,9 @@ function calculateEngine(vehicle)
 				info.slide,
 				isSliding and accel * getDrift(vehicle) or 0
 			)
+			if isSliding then
+				velocity = velocity + accel * (1 - math.min(velocity, 0.06) / 0.06)
+			end
 			speed = newAccel * ratio * velocity ^ _gearRatio * (isSliding and config.engine.launchRatio[fakeGear] or 1)
 		end
 		speed = speed / fakeGear / getVehicleMaxVelocity(vehicle) * config.engine.fixRatio[maxGears]
